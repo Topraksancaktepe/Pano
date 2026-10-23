@@ -33,6 +33,8 @@ final class AppModel: ObservableObject {
     private var feedbackTimer: Timer?
     // Returns the matching restoration action for this capture session.
     var prepareWindowForCapture: () -> (() -> Void) = { {} }
+    var onCapture: (Screenshot) -> Void = { _ in }
+    var captureShortcutAllowed: () -> Bool = { true }
     var stateChanged: () -> Void = {}
 
     var ready: Bool { accessibility && screenAccess && shortcutActive }
@@ -40,7 +42,7 @@ final class AppModel: ObservableObject {
     func start() {
         tap.canCapture = { [weak self] in
             guard let self else { return false }
-            return self.ready && !self.busy && !self.recorderPresented
+            return self.ready && !self.busy && !self.recorderPresented && self.captureShortcutAllowed()
         }
         tap.shortcut = shortcut
         tap.onRecorded = { [weak self] value in
@@ -127,12 +129,15 @@ final class AppModel: ObservableObject {
                 self.busy = false
                 defer { restoreWindow() }
                 switch result {
-                case .success(.cancelled):
+                case .success(nil):
                     self.lastMessage = "Selection cancelled."
                     self.logger.info("Capture cancelled")
-                case .success(.copied(let width, let height)):
+                case .success(.some(let screenshot)):
+                    let width = screenshot.image.width
+                    let height = screenshot.image.height
                     self.lastMessage = "Copied to clipboard · \(width) × \(height)"
                     self.justCopied = true
+                    self.onCapture(screenshot)
                     self.logger.info("Capture copied: \(width)x\(height)")
                     self.feedbackTimer?.invalidate()
                     self.feedbackTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: false) { [weak self] _ in

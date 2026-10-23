@@ -42,6 +42,18 @@ final class PanoCoreTests: XCTestCase {
         XCTAssertNotNil(board.data(forType: .tiff))
         XCTAssertTrue(board.canReadObject(forClasses: [NSImage.self], options: nil))
     }
+    func testCapturePayloadSurvivesTemporaryFileDeletionAndClipboardChanges() throws {
+        let file = try makePNG()
+        let payload = try XCTUnwrap(CaptureOutput.read(file: file, exitStatus: 0))
+        try FileManager.default.removeItem(at: file)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.setString("another app copied this", forType: .string)
+        XCTAssertEqual(payload.image.width, 3)
+        XCTAssertEqual(payload.image.height, 2)
+        XCTAssertNotNil(NSBitmapImageRep(data: try payload.pngData()))
+        XCTAssertEqual(board.string(forType: .string), "another app copied this")
+    }
     func testCorruptImageDoesNotClearClipboard() throws {
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }

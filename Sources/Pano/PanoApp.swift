@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import PanoCore
 
 @main
 struct PanoApp {
@@ -22,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var captureItem: NSMenuItem!
     private var stateItem: NSMenuItem!
     private var loginItem: NSMenuItem!
+    private let preview = CapturePreview()
+    private var editors: [UUID: EditorWindowController] = [:]
+    private var captureScreen: NSScreen?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: "local.toprak.Pano")
@@ -50,17 +54,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         quit.target = self
         statusItem.menu = menu
         installApplicationMenu()
+        preview.onEdit = { [weak self] screenshot in self?.openEditor(screenshot) }
+        model.onCapture = { [weak self] screenshot in
+            guard let self else { return }
+            self.preview.show(screenshot, on: self.captureScreen)
+        }
+        model.captureShortcutAllowed = { [weak self] in
+            guard let self else { return false }
+            return EditorShortcutPolicy.canCapture(self.model.shortcut,
+                editorFocused: self.editors.values.contains { $0.window?.isKeyWindow == true },
+                sheetFocused: self.editors.values.contains { $0.window?.attachedSheet?.isKeyWindow == true })
+        }
         model.prepareWindowForCapture = { [weak self] in
-            guard let self, let window = self.settingsWindow,
-                  window.isVisible, !window.isMiniaturized else { return {} }
+            guard let self else { return {} }
+            self.captureScreen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
+            let restorePreview = self.preview.hideForCapture()
             let session = self.windowSession
-            window.orderOut(nil)
-            return { [weak self, weak window] in
-                guard let self, let window, self.windowSession == session,
-                      !window.isMiniaturized else { return }
-                // Return after success, cancellation, or failure without taking
-                // keyboard focus away from the user's destination app.
-                window.orderFront(nil)
+            let settings = self.settingsWindow.flatMap { $0.isVisible && !$0.isMiniaturized ? $0 : nil }
+            let visibleEditors = self.editors.filter { $0.value.window?.isVisible == true && $0.value.window?.isMiniaturized == false }
+            settings?.orderOut(nil)
+            for editor in visibleEditors.values { editor.window?.orderOut(nil) }
+            return { [weak self, weak settings] in
+                guard let self else { return }
+                if self.windowSession == session, settings?.isMiniaturized == false { settings?.orderFront(nil) }
+                for (id, editor) in visibleEditors where self.editors[id] != nil {
+                    if editor.window?.isMiniaturized == false { editor.window?.orderFront(nil) }
+                }
+                restorePreview()
             }
         }
         model.stateChanged = { [weak self] in self?.updateMenu() }
@@ -81,12 +101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     func windowWillClose(_ notification: Notification) {
         windowSession = UUID()
         model.cancelRecorder()
-        NSApp.setActivationPolicy(.accessory)
+        DispatchQueue.main.async { [weak self] in self?.updateActivationPolicy() }
     }
     func applicationWillResignActive(_ notification: Notification) {
         if model.isRecording { model.cancelRecorder() }
     }
-    func applicationWillTerminate(_ notification: Notification) { model.stop() }
+    func applicationWillTerminate(_ notification: Notification) { preview.dismiss(); model.stop() }
     func menuWillOpen(_ menu: NSMenu) { model.refresh() }
 
     private func updateMenu() {
@@ -120,6 +140,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         if settingsWindow?.isMiniaturized == true { settingsWindow?.deminiaturize(nil) }
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
+
+    private func openEditor(_ screenshot: Screenshot) {
+        let controller = EditorWindowController(screenshot: screenshot)
+        controller.onClose = { [weak self] id in
+            // Defer ownership release until AppKit finishes closing the window.
+            DispatchQueue.main.async { [weak self] in
+                self?.editors[id] = nil
+                self?.updateActivationPolicy()
+            }
+        }
+        editors[controller.id] = controller
+        controller.present()
+    }
+
+    private func updateActivationPolicy() {
+        let hasRegularWindow = settingsWindow?.isVisible == true || settingsWindow?.isMiniaturized == true || !editors.isEmpty
+        NSApp.setActivationPolicy(hasRegularWindow ? .regular : .accessory)
+    }
+
+    private var activeEditor: EditorWindowController? {
+        editors.values.first { $0.window?.isKeyWindow == true && !$0.savePanelOpen }
+    }
+
+    @objc private func undoImage() {
+        if let editor = activeEditor { editor.model.undo() }
+        else { NSApp.keyWindow?.firstResponder?.undoManager?.undo() }
+    }
+    @objc private func redoImage() {
+        if let editor = activeEditor { editor.model.redo() }
+        else { NSApp.keyWindow?.firstResponder?.undoManager?.redo() }
+    }
+    @objc private func copyImage() {
+        if let editor = activeEditor { editor.model.copy() }
+        else { NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) }
+    }
+    @objc private func saveImage() { activeEditor?.save() }
+
     private func installApplicationMenu() {
         let menu = NSMenu()
         let appItem = NSMenuItem()
@@ -128,6 +185,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         quitItem.target = self
         appItem.submenu = appMenu
         menu.addItem(appItem)
+        let fileItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        let save = fileMenu.addItem(withTitle: "Save Image…", action: #selector(saveImage), keyEquivalent: "s")
+        save.target = self
+        fileItem.submenu = fileMenu
+        menu.addItem(fileItem)
+        let editItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        let undo = editMenu.addItem(withTitle: "Undo", action: #selector(undoImage), keyEquivalent: "z")
+        undo.target = self
+        let redo = editMenu.addItem(withTitle: "Redo", action: #selector(redoImage), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        redo.target = self
+        editMenu.addItem(.separator())
+        // Standard responder-chain copy/cut/paste keep native save-panel text fields usable.
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        let copy = editMenu.addItem(withTitle: "Copy", action: #selector(copyImage), keyEquivalent: "c")
+        copy.target = self
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = editMenu
+        menu.addItem(editItem)
         let windowItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")

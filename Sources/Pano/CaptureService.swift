@@ -7,7 +7,7 @@ final class CaptureService {
     private var directory: URL?
     var isRunning: Bool { process != nil }
 
-    func capture(completion: @escaping (Result<CaptureResult, Error>) -> Void) {
+    func capture(completion: @escaping (Result<Screenshot?, Error>) -> Void) {
         guard process == nil else { return }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Pano-" + UUID().uuidString)
         do {
@@ -28,7 +28,9 @@ final class CaptureService {
                         self?.directory = nil
                     }
                     completion(Result {
-                        try CaptureOutput.copy(file: file, exitStatus: ended.terminationStatus, to: .general)
+                        let screenshot = try CaptureOutput.read(file: file, exitStatus: ended.terminationStatus)
+                        try screenshot?.copy(to: .general)
+                        return screenshot
                     })
                 }
             }
