@@ -23,6 +23,7 @@ struct AnnotationCanvas: NSViewRepresentable {
 final class AnnotationCanvasView: NSView {
     weak var model: EditorModel?
     private var draft: Annotation?
+    private var cropDrag: CropDrag?
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -40,26 +41,32 @@ final class AnnotationCanvasView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let model else { return }
-        let image = NSImage(cgImage: model.image, size: model.original.size)
+        let image = NSImage(cgImage: model.image, size: model.canvasSize)
         image.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1,
                    respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
-        guard let draft, let context = NSGraphicsContext.current?.cgContext else { return }
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()
-        context.scaleBy(x: bounds.width / model.original.size.width,
-                        y: bounds.height / model.original.size.height)
+        defer { context.restoreGState() }
+        context.scaleBy(x: bounds.width / model.canvasSize.width,
+                        y: bounds.height / model.canvasSize.height)
+        if model.tool == .crop, let selection = model.cropSelection {
+            CropOverlay.draw(selection, image: model.canvasSize,
+                pixelWidth: model.canvasSize.width / max(1, bounds.width), in: context)
+            return
+        }
+        guard let draft else { return }
         if draft.tool.isRedaction {
             let rect = draft.region
             context.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor)
             context.fill(rect)
             context.setStrokeColor(NSColor.controlAccentColor.cgColor)
-            let pixelWidth = model.original.size.width / max(1, bounds.width)
+            let pixelWidth = model.canvasSize.width / max(1, bounds.width)
             context.setLineWidth(pixelWidth)
             context.setLineDash(phase: 0, lengths: [5 * pixelWidth, 3 * pixelWidth])
             context.stroke(rect)
         } else {
             AnnotationRenderer.drawVector(draft, in: context)
         }
-        context.restoreGState()
     }
 
     private func point(for event: NSEvent, clamp: Bool = false) -> CGPoint? {
@@ -69,13 +76,19 @@ final class AnnotationCanvasView: NSView {
             point.x = min(max(0, point.x), max(0, bounds.width - 0.01))
             point.y = min(max(0, point.y), max(0, bounds.height - 0.01))
         }
-        return ImageGeometry.imagePoint(point, in: bounds, image: model.original.size)
+        return ImageGeometry.imagePoint(point, in: bounds, image: model.canvasSize)
     }
 
     override func mouseDown(with event: NSEvent) {
         guard let model, !model.isRendering, let point = point(for: event) else { return }
         window?.makeFirstResponder(self)
-        if model.tool == .step {
+        if model.tool == .crop {
+            let drag = CropDrag(start: point, selection: model.cropSelection,
+                tolerance: model.canvasSize.width / max(1, bounds.width) * 8)
+            cropDrag = drag
+            model.selectCrop(drag.region(at: point, image: model.canvasSize))
+            needsDisplay = true
+        } else if model.tool == .step {
             model.commit(model.annotation(points: [point]))
         } else {
             draft = model.annotation(points: [point, point])
@@ -84,6 +97,11 @@ final class AnnotationCanvasView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let cropDrag, let model, model.tool == .crop, let point = point(for: event, clamp: true) {
+            model.selectCrop(cropDrag.region(at: point, image: model.canvasSize))
+            needsDisplay = true
+            return
+        }
         guard var annotation = draft, let point = point(for: event, clamp: true) else { return }
         if annotation.tool == .pen || annotation.tool == .highlight {
             if let last = annotation.points.last, hypot(point.x - last.x, point.y - last.y) < 0.8 { return }
@@ -96,6 +114,14 @@ final class AnnotationCanvasView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if let cropDrag {
+            if let model, model.tool == .crop, let point = point(for: event, clamp: true) {
+                model.selectCrop(cropDrag.region(at: point, image: model.canvasSize))
+            }
+            self.cropDrag = nil
+            needsDisplay = true
+            return
+        }
         guard var annotation = draft else { return }
         if let point = point(for: event, clamp: true) {
             if annotation.tool == .pen || annotation.tool == .highlight { annotation.points.append(point) }
@@ -107,9 +133,14 @@ final class AnnotationCanvasView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53, draft != nil {
-            draft = nil
+        if event.keyCode == 53 {
+            if draft != nil { draft = nil }
+            else if cropDrag != nil { cropDrag = nil; model?.selectCrop(nil) }
+            else if model?.group == .crop { model?.cancelCrop() }
+            else { super.keyDown(with: event); return }
             needsDisplay = true
+        } else if event.keyCode == 36, model?.group == .crop {
+            model?.applyCrop()
         } else { super.keyDown(with: event) }
     }
 }

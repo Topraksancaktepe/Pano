@@ -6,6 +6,23 @@ public enum AnnotationRenderer {
     private static let filters = CIContext(options: [.cacheIntermediates: false])
 
     public static func render(image: CGImage, annotations: [Annotation]) throws -> CGImage {
+        var output = image
+        var segment: [Annotation] = []
+        for annotation in annotations where annotation.isMeaningful {
+            if annotation.tool == .crop {
+                output = try renderAnnotations(image: output, annotations: segment)
+                segment.removeAll(keepingCapacity: true)
+                if let region = ImageGeometry.cropRegion(annotation.region,
+                    image: CGSize(width: output.width, height: output.height)),
+                   let cropped = output.cropping(to: region) {
+                    output = cropped
+                }
+            } else { segment.append(annotation) }
+        }
+        return try renderAnnotations(image: output, annotations: segment)
+    }
+
+    private static func renderAnnotations(image: CGImage, annotations: [Annotation]) throws -> CGImage {
         guard !annotations.isEmpty else { return image }
         let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
         guard let context = CGContext(data: nil, width: image.width, height: image.height,
@@ -88,7 +105,7 @@ public enum AnnotationRenderer {
             context.textMatrix = .identity
             context.textPosition = CGPoint(x: -textWidth / 2, y: -(ascent - descent) / 2)
             CTLineDraw(line, context)
-        case .smoothBlur, .pixelate: break
+        case .smoothBlur, .pixelate, .crop: break
         }
     }
 

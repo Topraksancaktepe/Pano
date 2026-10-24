@@ -164,4 +164,79 @@ final class AnnotationTests: XCTestCase {
         XCTAssertEqual(dark.textColor, NSColor.white)
         XCTAssertEqual(AnnotationColor.yellow.textColor, NSColor.black)
     }
+
+    func testCropKeepsSelectedPixelsUprightAtExactPixelDimensions() throws {
+        let output = try AnnotationRenderer.render(image: image(), annotations: [
+            Annotation(tool: .crop, points: [CGPoint(x: 90, y: 60), CGPoint(x: 10, y: 10)])
+        ])
+        XCTAssertEqual(output.width, 80)
+        XCTAssertEqual(output.height, 50)
+        XCTAssertGreaterThan(pixel(output, 5, 2).redComponent, 0.95)
+        XCTAssertLessThan(pixel(output, 5, 48).redComponent, 0.05)
+        let exported = try XCTUnwrap(NSBitmapImageRep(data: Screenshot(image: output).pngData()))
+        XCTAssertEqual(exported.pixelsWide, 80)
+        XCTAssertEqual(exported.pixelsHigh, 50)
+    }
+
+    func testCropPreservesEarlierMarksAndUsesNewCoordinatesForLaterMarks() throws {
+        let output = try AnnotationRenderer.render(image: image(), annotations: [
+            Annotation(tool: .pen, points: [CGPoint(x: 20, y: 20), CGPoint(x: 60, y: 20)], color: .red, width: 6),
+            Annotation(tool: .crop, points: [CGPoint(x: 10, y: 10), CGPoint(x: 100, y: 70)]),
+            Annotation(tool: .pen, points: [CGPoint(x: 10, y: 30), CGPoint(x: 70, y: 30)], color: .green, width: 6)
+        ])
+        XCTAssertEqual(output.width, 90)
+        XCTAssertEqual(output.height, 60)
+        XCTAssertLessThan(pixel(output, 30, 10).greenComponent, 0.5)
+        XCTAssertGreaterThan(pixel(output, 40, 30).greenComponent, 0.65)
+        XCTAssertLessThan(pixel(output, 40, 50).redComponent, 0.05)
+    }
+
+    func testUndoRedoAndRepeatedCropPreserveCompleteHistory() throws {
+        let source = image()
+        var history = AnnotationHistory()
+        history.append(Annotation(tool: .step, points: [CGPoint(x: 30, y: 20)]))
+        history.append(Annotation(tool: .crop, points: [CGPoint(x: 10, y: 10), CGPoint(x: 100, y: 70)]))
+        history.append(Annotation(tool: .crop, points: [CGPoint(x: 5, y: 5), CGPoint(x: 55, y: 35)]))
+        var output = try AnnotationRenderer.render(image: source, annotations: history.annotations)
+        XCTAssertEqual(output.width, 50)
+        XCTAssertEqual(output.height, 30)
+        history.undo()
+        output = try AnnotationRenderer.render(image: source, annotations: history.annotations)
+        XCTAssertEqual(output.width, 90)
+        history.undo()
+        output = try AnnotationRenderer.render(image: source, annotations: history.annotations)
+        XCTAssertEqual(output.width, 120)
+        XCTAssertEqual(history.nextStep, 2)
+        history.redo()
+        output = try AnnotationRenderer.render(image: source, annotations: history.annotations)
+        XCTAssertEqual(output.width, 90)
+        XCTAssertEqual(output.height, 60)
+    }
+
+    func testCropClampsToImageAndRejectsEmptyOrOutsideSelections() throws {
+        let source = image()
+        let clipped = try AnnotationRenderer.render(image: source, annotations: [
+            Annotation(tool: .crop, points: [CGPoint(x: -10, y: -20), CGPoint(x: 40, y: 30)])
+        ])
+        XCTAssertEqual(clipped.width, 40)
+        XCTAssertEqual(clipped.height, 30)
+        for points in [[CGPoint(x: 150, y: 90), CGPoint(x: 180, y: 120)],
+                       [CGPoint(x: 10, y: 10), CGPoint(x: 10, y: 10)]] {
+            let output = try AnnotationRenderer.render(image: source, annotations: [Annotation(tool: .crop, points: points)])
+            XCTAssertEqual(output.width, 120)
+            XCTAssertEqual(output.height, 80)
+        }
+    }
+
+    func testMovingCropSnapsOriginWithoutGrowingSelection() {
+        let image = CGSize(width: 200, height: 120)
+        var selection = CGRect(x: 10, y: 10, width: 100, height: 50)
+        for _ in 0..<10 {
+            let moved = ImageGeometry.moveCrop(selection, by: CGSize(width: 0.5, height: 0.5), image: image)
+            selection = ImageGeometry.cropRegion(moved, image: image)!
+            XCTAssertEqual(selection.size, CGSize(width: 100, height: 50))
+        }
+        let edge = ImageGeometry.moveCrop(selection, by: CGSize(width: 1000, height: -1000), image: image)
+        XCTAssertEqual(edge, CGRect(x: 100, y: 0, width: 100, height: 50))
+    }
 }

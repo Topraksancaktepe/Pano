@@ -1,7 +1,7 @@
 import AppKit
 
 public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
-    case arrow, pen, highlight, smoothBlur, pixelate, step
+    case arrow, pen, highlight, smoothBlur, pixelate, step, crop
     public var id: String { rawValue }
     public var isRedaction: Bool { self == .smoothBlur || self == .pixelate }
 }
@@ -78,7 +78,7 @@ public struct Annotation: Identifiable, Sendable {
 
     public var isMeaningful: Bool {
         if tool == .step { return points.count == 1 }
-        if tool.isRedaction { return region.width >= 2 && region.height >= 2 }
+        if tool.isRedaction || tool == .crop { return region.width >= 2 && region.height >= 2 }
         guard points.count >= 2, let first = points.first else { return false }
         return points.contains { hypot($0.x - first.x, $0.y - first.y) >= 1 }
     }

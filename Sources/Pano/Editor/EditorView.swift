@@ -52,23 +52,23 @@ struct EditorView: View {
             HStack(spacing: 14) {
                 Button(action: model.undo) { Image(systemName: "arrow.uturn.backward") }
                     .help("Undo (⌘Z)").accessibilityLabel("Undo")
-                    .disabled(!model.history.canUndo || model.isRendering)
+                    .disabled((!model.history.canUndo && model.cropSelection == nil) || model.isRendering)
                 Button(action: model.redo) { Image(systemName: "arrow.uturn.forward") }
                     .help("Redo (⇧⌘Z)").accessibilityLabel("Redo")
                     .disabled(!model.history.canRedo || model.isRendering)
             }
-            .frame(width: 176, alignment: .leading)
+            .frame(width: 156, alignment: .leading)
             Spacer(minLength: 0)
             toolGroups
             Spacer(minLength: 0)
             HStack(spacing: 12) {
                 Button(action: onSave) { Label("Save", systemImage: "square.and.arrow.down") }
-                    .help("Save Image (⌘S)").disabled(model.isRendering)
+                    .help("Save Image (⌘S)").disabled(model.isRendering || model.cropSelection != nil)
                 Button(action: model.copy) { Label("Copy", systemImage: "doc.on.doc").padding(.horizontal, 4) }
                     .buttonStyle(.borderedProminent).controlSize(.large)
-                    .help("Copy Image (⌘C)").disabled(model.isRendering)
+                    .help("Copy Image (⌘C)").disabled(model.isRendering || model.cropSelection != nil)
             }
-            .frame(width: 176, alignment: .trailing)
+            .frame(width: 156, alignment: .trailing)
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 18).padding(.vertical, 12)
@@ -81,7 +81,7 @@ struct EditorView: View {
                 Button { model.group = group } label: {
                     HStack(spacing: 7) {
                         if group == .redact { PixelateGlyph() }
-                        else { Image(systemName: group == .markup ? "pencil.tip" : "list.number").frame(width: 16) }
+                        else { Image(systemName: group == .crop ? "crop" : group == .markup ? "pencil.tip" : "list.number").frame(width: 16) }
                         Text(group.rawValue).font(.system(size: 12, weight: .semibold))
                     }
                     .padding(.horizontal, 12).frame(height: 34)
@@ -122,6 +122,20 @@ struct EditorView: View {
                 palette
                 optionsDivider
                 sizePicker
+            case .crop:
+                Image(systemName: "crop").foregroundStyle(EditorTheme.accent)
+                if let selection = model.cropSelection {
+                    Text("\(Int(selection.width)) × \(Int(selection.height)) px")
+                        .font(.system(size: 12, weight: .medium)).monospacedDigit()
+                } else {
+                    Text("Select the area to keep").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                optionsDivider
+                Button("Cancel", action: model.cancelCrop).buttonStyle(.borderless)
+                Button("Apply Crop", action: model.applyCrop)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return, modifiers: [])
+                    .disabled(model.cropSelection == nil || model.isRendering)
             }
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -191,11 +205,11 @@ struct EditorView: View {
     private var canvas: some View {
         GeometryReader { geometry in
             let available = CGSize(width: max(1, geometry.size.width - 64), height: max(1, geometry.size.height - 64))
-            let fit = min(1, min(available.width / model.original.size.width, available.height / model.original.size.height))
+            let fit = min(1, min(available.width / model.canvasSize.width, available.height / model.canvasSize.height))
             let scale = fit * model.zoom
             ScrollView([.horizontal, .vertical]) {
                 AnnotationCanvas(model: model)
-                    .frame(width: model.original.size.width * scale, height: model.original.size.height * scale)
+                    .frame(width: model.canvasSize.width * scale, height: model.canvasSize.height * scale)
                     .shadow(color: .black.opacity(0.16), radius: 16, x: 0, y: 6)
                     .padding(32)
                     .frame(minWidth: geometry.size.width, minHeight: geometry.size.height)
@@ -213,7 +227,7 @@ struct EditorView: View {
             Spacer()
             if model.isRendering { ProgressView().controlSize(.mini) }
             Text(model.isRendering ? "Applying…" : model.hint).foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(1).truncationMode(.tail)
             Spacer()
             Button { model.zoom = max(0.5, model.zoom / 1.25) } label: { Image(systemName: "minus.magnifyingglass") }
                 .accessibilityLabel("Zoom out")

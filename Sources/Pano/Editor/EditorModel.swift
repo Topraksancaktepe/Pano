@@ -4,7 +4,7 @@ import PanoCore
 import UniformTypeIdentifiers
 
 enum EditorGroup: String, CaseIterable {
-    case markup = "Markup", redact = "Redact", steps = "Steps"
+    case markup = "Markup", redact = "Redact", steps = "Steps", crop = "Crop"
 }
 
 @MainActor
@@ -12,7 +12,10 @@ final class EditorModel: ObservableObject {
     let original: Screenshot
     @Published private(set) var image: CGImage
     @Published private(set) var history = AnnotationHistory()
-    @Published var group: EditorGroup = .markup
+    @Published var group: EditorGroup = .markup {
+        didSet { if group != .crop { cropSelection = nil } }
+    }
+    @Published private(set) var cropSelection: CGRect?
     @Published var markupTool: AnnotationTool = .arrow
     @Published var redactTool: AnnotationTool = .pixelate
     @Published var color: AnnotationColor = .red
@@ -35,8 +38,10 @@ final class EditorModel: ObservableObject {
         case .markup: return markupTool
         case .redact: return redactTool
         case .steps: return .step
+        case .crop: return .crop
         }
     }
+    var canvasSize: CGSize { CGSize(width: image.width, height: image.height) }
     var pixelScale: CGFloat { max(1, max(original.size.width, original.size.height) / 1400) }
     var hint: String {
         switch tool {
@@ -45,6 +50,7 @@ final class EditorModel: ObservableObject {
         case .highlight: return "Drag over the part you want to highlight."
         case .smoothBlur, .pixelate: return "Drag a rectangle over the area to blur."
         case .step: return "Click to place step \(history.nextStep)."
+        case .crop: return cropSelection == nil ? "Drag to select the area to keep." : "Adjust the selection, then apply. Return to apply · Esc to cancel."
         }
     }
 
@@ -60,13 +66,33 @@ final class EditorModel: ObservableObject {
     }
 
     func undo() {
+        if !isRendering, cropSelection != nil { cropSelection = nil; return }
         guard !isRendering, history.canUndo else { return }
         update { $0.undo() }
     }
 
     func redo() {
         guard !isRendering, history.canRedo else { return }
+        cropSelection = nil
         update { $0.redo() }
+    }
+
+    func selectCrop(_ rect: CGRect?) {
+        guard !isRendering else { return }
+        cropSelection = rect.flatMap { ImageGeometry.cropRegion($0, image: canvasSize) }
+    }
+
+    func applyCrop() {
+        guard !isRendering, let cropSelection else { return }
+        commit(Annotation(tool: .crop, points: [cropSelection.origin,
+            CGPoint(x: cropSelection.maxX, y: cropSelection.maxY)]))
+        self.cropSelection = nil
+        zoom = 1
+    }
+
+    func cancelCrop() {
+        cropSelection = nil
+        group = .markup
     }
 
     private func update(_ change: (inout AnnotationHistory) -> Void) {
@@ -92,6 +118,7 @@ final class EditorModel: ObservableObject {
 
     func copy() {
         guard !isRendering else { return }
+        guard cropSelection == nil else { showFeedback("Apply or cancel the crop first."); return }
         do {
             try Screenshot(image: image).copy(to: .general)
             showFeedback("Copied to clipboard")
@@ -100,6 +127,7 @@ final class EditorModel: ObservableObject {
 
     func save(in window: NSWindow) {
         guard !isRendering else { return }
+        guard cropSelection == nil else { showFeedback("Apply or cancel the crop first."); return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.canCreateDirectories = true

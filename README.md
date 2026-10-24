@@ -5,6 +5,7 @@ Pano 1.4 adds an optional editor without changing instant screenshot copying. Af
 - **Markup:** arrows, freehand pen, and highlighter, with colors and stroke sizes.
 - **Redact:** select an area for smooth blur or pixelation and adjust its strength.
 - **Steps:** click to add numbered markers in sequence.
+- **Crop:** select the area to keep, move or resize the selection, then apply. Cropping supports undo/redo and sets the exported PNG dimensions.
 - Undo/redo, fit/zoom, Copy, and Save as PNG. Exports keep the original screenshot resolution.
 
 The preview disappears after 12 seconds (it pauses while hovered). Editor windows stay open until you close them. Captures are processed locally; blur and annotations are flattened into the exported image. Blur and pixelation are visual obscuring tools, not a guarantee that sensitive information cannot be inferred.
