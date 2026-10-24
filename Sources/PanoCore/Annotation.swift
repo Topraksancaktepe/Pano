@@ -6,8 +6,24 @@ public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
     public var isRedaction: Bool { self == .smoothBlur || self == .pixelate }
 }
 
-public enum AnnotationColor: String, CaseIterable, Identifiable, Sendable {
+public enum AnnotationColor: CaseIterable, Identifiable, Equatable, Sendable {
     case red, orange, yellow, green, blue, purple, white, black
+    case custom(red: CGFloat, green: CGFloat, blue: CGFloat)
+
+    public static let allCases: [AnnotationColor] = [.red, .orange, .yellow, .green, .blue, .purple, .white, .black]
+    public var rawValue: String {
+        switch self {
+        case .red: return "red"
+        case .orange: return "orange"
+        case .yellow: return "yellow"
+        case .green: return "green"
+        case .blue: return "blue"
+        case .purple: return "purple"
+        case .white: return "white"
+        case .black: return "black"
+        case .custom: return "custom"
+        }
+    }
     public var id: String { rawValue }
     public var nsColor: NSColor {
         switch self {
@@ -19,7 +35,19 @@ public enum AnnotationColor: String, CaseIterable, Identifiable, Sendable {
         case .purple: return NSColor(srgbRed: 0.65, green: 0.40, blue: 0.97, alpha: 1)
         case .white: return .white
         case .black: return NSColor(srgbRed: 0.09, green: 0.10, blue: 0.12, alpha: 1)
+        case .custom(let red, let green, let blue):
+            return NSColor(srgbRed: red, green: green, blue: blue, alpha: 1)
         }
+    }
+
+    public var textColor: NSColor {
+        guard let rgb = nsColor.usingColorSpace(.sRGB) else { return .white }
+        func linear(_ component: CGFloat) -> CGFloat {
+            component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(rgb.redComponent)
+            + 0.7152 * linear(rgb.greenComponent) + 0.0722 * linear(rgb.blueComponent)
+        return luminance > 0.55 ? .black : .white
     }
 }
 

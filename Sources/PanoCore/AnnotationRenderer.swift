@@ -9,7 +9,7 @@ public enum AnnotationRenderer {
         guard !annotations.isEmpty else { return image }
         let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
         guard let context = CGContext(data: nil, width: image.width, height: image.height,
-            bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+            bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { throw CaptureError.invalidImage }
         context.draw(image, in: bounds)
@@ -75,7 +75,7 @@ public enum AnnotationRenderer {
             context.setStrokeColor(NSColor.white.cgColor)
             context.strokeEllipse(in: circle.insetBy(dx: 0.6, dy: 0.6))
             let font = CTFontCreateWithName(".AppleSystemUIFont-Bold" as CFString, radius * 1.1, nil)
-            let textColor: NSColor = annotation.color == .white || annotation.color == .yellow ? .black : .white
+            let textColor = annotation.color.textColor
             let string = NSAttributedString(string: String(annotation.number), attributes: [
                 NSAttributedString.Key(kCTFontAttributeName as String): font,
                 NSAttributedString.Key(kCTForegroundColorAttributeName as String): textColor.cgColor

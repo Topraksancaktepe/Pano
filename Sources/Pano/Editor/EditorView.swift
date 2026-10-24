@@ -48,6 +48,34 @@ struct EditorView: View {
     }
 
     private var toolbar: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 14) {
+                Button(action: model.undo) { Image(systemName: "arrow.uturn.backward") }
+                    .help("Undo (⌘Z)").accessibilityLabel("Undo")
+                    .disabled(!model.history.canUndo || model.isRendering)
+                Button(action: model.redo) { Image(systemName: "arrow.uturn.forward") }
+                    .help("Redo (⇧⌘Z)").accessibilityLabel("Redo")
+                    .disabled(!model.history.canRedo || model.isRendering)
+            }
+            .frame(width: 176, alignment: .leading)
+            Spacer(minLength: 0)
+            toolGroups
+            Spacer(minLength: 0)
+            HStack(spacing: 12) {
+                Button(action: onSave) { Label("Save", systemImage: "square.and.arrow.down") }
+                    .help("Save Image (⌘S)").disabled(model.isRendering)
+                Button(action: model.copy) { Label("Copy", systemImage: "doc.on.doc").padding(.horizontal, 4) }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+                    .help("Copy Image (⌘C)").disabled(model.isRendering)
+            }
+            .frame(width: 176, alignment: .trailing)
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 18).padding(.vertical, 12)
+        .background(.bar)
+    }
+
+    private var toolGroups: some View {
         HStack(spacing: 6) {
             ForEach(EditorGroup.allCases, id: \.self) { group in
                 Button { model.group = group } label: {
@@ -62,23 +90,8 @@ struct EditorView: View {
                                 in: RoundedRectangle(cornerRadius: 9))
                 }.buttonStyle(.plain).accessibilityLabel(group.rawValue)
             }
-            Spacer(minLength: 12)
-            Button(action: model.undo) { Image(systemName: "arrow.uturn.backward") }
-                .help("Undo (⌘Z)").accessibilityLabel("Undo")
-                .disabled(!model.history.canUndo || model.isRendering)
-            Button(action: model.redo) { Image(systemName: "arrow.uturn.forward") }
-                .help("Redo (⇧⌘Z)").accessibilityLabel("Redo")
-                .disabled(!model.history.canRedo || model.isRendering)
-            Divider().frame(height: 20).padding(.horizontal, 8)
-            Button(action: onSave) { Label("Save", systemImage: "square.and.arrow.down") }
-                .help("Save Image (⌘S)").disabled(model.isRendering)
-            Button(action: model.copy) { Label("Copy", systemImage: "doc.on.doc").padding(.horizontal, 4) }
-                .buttonStyle(.borderedProminent).controlSize(.large)
-                .help("Copy Image (⌘C)").disabled(model.isRendering)
         }
-        .buttonStyle(.borderless)
-        .padding(.horizontal, 18).padding(.vertical, 12)
-        .background(.bar)
+        .fixedSize()
     }
 
     private var options: some View {
@@ -102,7 +115,7 @@ struct EditorView: View {
             case .steps:
                 Text("\(model.history.nextStep)")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white).frame(width: 27, height: 27)
+                    .foregroundStyle(Color(nsColor: model.color.textColor)).frame(width: 27, height: 27)
                     .background(Color(nsColor: model.color.nsColor), in: Circle())
                 Text("Click to number each step").font(.system(size: 12)).foregroundStyle(.secondary)
                 optionsDivider
@@ -110,8 +123,9 @@ struct EditorView: View {
                 optionsDivider
                 sizePicker
             }
-            Spacer(minLength: 0)
         }
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, 20).frame(height: 54)
         .background(Color(nsColor: .controlBackgroundColor))
     }
@@ -147,6 +161,16 @@ struct EditorView: View {
                     .accessibilityLabel("\(color.rawValue.capitalized) color")
                     .accessibilityAddTraits(model.color == color ? [.isSelected] : [])
             }
+            ColorPicker("Custom Color", selection: Binding(
+                get: { Color(nsColor: model.color.nsColor) },
+                set: { color in
+                    guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return }
+                    model.color = .custom(red: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent)
+                }), supportsOpacity: false)
+                .labelsHidden()
+                .frame(width: 26, height: 26)
+                .help("Choose a custom color")
+                .accessibilityLabel("Custom color palette")
         }
     }
 

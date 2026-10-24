@@ -141,4 +141,27 @@ final class AnnotationTests: XCTestCase {
         }
         XCTAssertFalse(EditorShortcutPolicy.canCapture(.defaultShortcut, editorFocused: false, sheetFocused: true))
     }
+
+    func testCustomColorIsRetainedInRenderedAndExportedStrokes() throws {
+        let custom = AnnotationColor.custom(red: 0.18, green: 0.62, blue: 0.80)
+        let rendered = try AnnotationRenderer.render(image: image(), annotations: [
+            Annotation(tool: .pen, points: [CGPoint(x: 10, y: 20), CGPoint(x: 60, y: 20)], color: custom, width: 8)
+        ])
+        let exported = try XCTUnwrap(NSBitmapImageRep(data: Screenshot(image: rendered).pngData()))
+        // colorAt returns a calibrated NSColor; inspect the tagged PNG samples directly.
+        var components = [Int](repeating: 0, count: exported.samplesPerPixel)
+        exported.getPixel(&components, atX: 30, y: 20)
+        XCTAssertEqual(exported.colorSpace, NSColorSpace.sRGB)
+        XCTAssertEqual(Double(components[0]) / 255, 0.18, accuracy: 0.01)
+        XCTAssertEqual(Double(components[1]) / 255, 0.62, accuracy: 0.01)
+        XCTAssertEqual(Double(components[2]) / 255, 0.80, accuracy: 0.01)
+    }
+
+    func testCustomLightAndDarkStepColorsKeepNumbersLegible() {
+        let light = AnnotationColor.custom(red: 0.96, green: 0.92, blue: 0.86)
+        let dark = AnnotationColor.custom(red: 0.12, green: 0.16, blue: 0.24)
+        XCTAssertEqual(light.textColor, NSColor.black)
+        XCTAssertEqual(dark.textColor, NSColor.white)
+        XCTAssertEqual(AnnotationColor.yellow.textColor, NSColor.black)
+    }
 }
