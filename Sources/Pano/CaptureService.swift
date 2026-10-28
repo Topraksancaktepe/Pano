@@ -17,7 +17,7 @@ final class CaptureService {
             let file = folder.appendingPathComponent("capture.png")
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-            task.arguments = ["-i", "-s", "-x", "-t", "png", file.path]
+            task.arguments = ["-i", "-s", "-t", "png", file.path]
             task.standardOutput = FileHandle.nullDevice
             task.standardError = FileHandle.nullDevice
             task.terminationHandler = { [weak self] ended in
