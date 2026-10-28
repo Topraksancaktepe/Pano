@@ -10,8 +10,12 @@ case "$MODE" in run|--verify|--logs|--telemetry|--debug|--build-only) ;; *) exit
 if [ "$MODE" != "--build-only" ]; then
     pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 fi
-./script/swift.sh build
-BUILD_DIR="$(./script/swift.sh build --show-bin-path)"
+BUILD_ARGS=(--configuration "${PANO_BUILD_CONFIGURATION:-debug}" --product Pano)
+if [ "${PANO_UNIVERSAL:-0}" = "1" ]; then
+    BUILD_ARGS+=(--arch arm64 --arch x86_64)
+fi
+./script/swift.sh build "${BUILD_ARGS[@]}"
+BUILD_DIR="$(./script/swift.sh build "${BUILD_ARGS[@]}" --show-bin-path)"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cp "$BUILD_DIR/Pano" "$APP_BUNDLE/Contents/MacOS/Pano"
 chmod +x "$APP_BUNDLE/Contents/MacOS/Pano"

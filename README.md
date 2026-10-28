@@ -1,8 +1,8 @@
 # Pano
 
-Pano 1.4 adds an optional editor without changing instant screenshot copying. After a capture, click the small preview in the bottom-right corner to edit it.
+Pano 1.4.3 copies screenshots instantly, plays the native macOS capture sound, and adds an optional editor. After a capture, click the small preview in the bottom-right corner to edit it.
 
-- **Markup:** arrows, freehand pen, and highlighter, with colors and stroke sizes.
+- **Markup:** arrows, freehand pen, and highlighter, with preset or custom colors and stroke sizes.
 - **Redact:** select an area for smooth blur or pixelation and adjust its strength.
 - **Steps:** click to add numbered markers in sequence.
 - **Crop:** select the area to keep, move or resize the selection, then apply. Cropping supports undo/redo and sets the exported PNG dimensions.
@@ -14,11 +14,24 @@ Pano is a small macOS app that captures a selected screen area directly to the c
 
 Pano runs in the menu bar and can start when you log in. Its settings window remains open until you close it. While the window is open, Pano appears in the Dock and ⌘Tab. During screen selection the window temporarily hides, then returns when selection finishes or is cancelled.
 
+## Install
+
+Download **Pano-1.4.3-macOS.dmg** from the [latest release](https://github.com/Topraksancaktepe/Pano/releases/latest). It supports both Apple Silicon and Intel Macs.
+
+1. Quit Pano if an older version is running.
+2. Open the disk image and drag **Pano** to **Applications**, replacing an older copy if asked.
+3. Eject the disk image and open Pano from Applications.
+4. Grant Accessibility and Screen Recording permissions when asked. An update may need these permissions again.
+
+This release is **ad-hoc signed and not notarized by Apple**. macOS may block the first launch. If you trust the download, review the notice in **System Settings → Privacy & Security** and choose **Open Anyway**. No Apple Developer certificate is included in this project.
+
 ## Requirements
 
 - macOS 14 or later
 - Accessibility and Screen Recording permissions, granted in System Settings when Pano asks
 - Xcode/Swift toolchain to build from source
+
+The downloadable app does not require Xcode.
 
 ## Build
 
@@ -29,6 +42,14 @@ Pano runs in the menu bar and can start when you log in. Its settings window rem
 This creates `outputs/Pano.app`. Move it to `/Applications` before opening it and granting permissions. Open the app once, then enable the two permissions it requests. The app registers launch at login on first launch; the switch in Pano controls that setting.
 
 The local build is **ad-hoc signed and not notarized**. macOS may require you to explicitly allow opening a downloaded build. Rebuilding changes the app's signing identity and can require granting its permissions again. A signed, notarized distribution requires an Apple Developer signing identity and notarization, which this repository does not provide.
+
+To build the universal release disk image and its SHA-256 checksum:
+
+```sh
+./script/package_release.sh
+```
+
+The package is written to `outputs/Pano-1.4.3-macOS.dmg`. It contains the app, an Applications shortcut, and installation instructions. This does not replace a running installed copy or grant macOS permissions.
 
 To run the tests:
 
